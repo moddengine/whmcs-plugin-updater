@@ -1,0 +1,7 @@
+parameters:
+    level: 5
+    paths:
+        - modules
+        - tests
+    scanFiles:
+        - stubs/whmcs.php

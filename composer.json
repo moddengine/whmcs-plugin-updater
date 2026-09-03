@@ -1,0 +1,16 @@
+{
+    "require-dev": {
+        "phpstan/phpstan": "^2.1"
+    },
+    "scripts": {
+        "analyse": "phpstan analyse --no-progress --memory-limit=256M",
+        "qa": [
+            "@test",
+            "@analyse"
+        ],
+        "test": "@php -d zend.assertions=1 -d assert.exception=1 tests/run.php"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

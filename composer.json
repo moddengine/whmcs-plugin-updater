@@ -1,7 +1,21 @@
 {
+    "name": "moddengine/whmcs-plugin-updater",
+    "description": "WHMCS plugin update manifests and updater addon",
+    "license": "MPL-2.0",
+    "require": {
+        "php": ">=8.1"
+    },
     "require-dev": {
         "phpstan/phpstan": "^2.1"
     },
+    "autoload": {
+        "classmap": [
+            "modules/addons/pluginupdater/lib/Core.php"
+        ]
+    },
+    "bin": [
+        "bin/whmcs-plugin-manifest"
+    ],
     "scripts": {
         "analyse": "phpstan analyse --no-progress --memory-limit=256M",
         "qa": [

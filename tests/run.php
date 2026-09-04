@@ -22,6 +22,7 @@ mkdir($base, 0700, true);
 
 try {
     testManifestAndRelease($base);
+    testManifestGeneration($base);
     testArchiveSafety($base);
     testTransactionAndRollback($base);
     testRecovery($base);
@@ -96,6 +97,57 @@ function testManifestAndRelease(string $base): void
     $brokenLatest['tag_name'] = 'v1.3.0';
     $brokenLatest['assets'] = [];
     expectException(fn () => Release::select([$releases[0], $brokenLatest], [$manifest]), 'must contain exactly one');
+}
+
+function testManifestGeneration(string $base): void
+{
+    $directory = $base . '/fixture_addon';
+    mkdir($directory);
+    file_put_contents($directory . '/fixture_addon.php', <<<'PHP'
+<?php
+function fixture_addon_config(): array
+{
+    return ['name' => 'Fixture', 'version' => '1.2.3'];
+}
+PHP);
+    writeJson($directory . '/composer.json', ['name' => 'fallback/package', 'require' => ['php' => '>=8.1']]);
+    writeJson($directory . '/whmcs.json', ['version' => '1.2.3', 'requirements' => ['whmcs' => ['min' => '8.13']]]);
+
+    $oldRepository = getenv('GITHUB_REPOSITORY');
+    $oldRef = getenv('GITHUB_REF');
+    $oldRefName = getenv('GITHUB_REF_NAME');
+    $oldRefType = getenv('GITHUB_REF_TYPE');
+    putenv('GITHUB_REPOSITORY=moddengine/example');
+    putenv('GITHUB_REF=refs/tags/v1.2.3');
+    putenv('GITHUB_REF_NAME=v1.2.3');
+    putenv('GITHUB_REF_TYPE=tag');
+    try {
+        $manifest = Manifest::generate($directory, whmcsMaxExclusive: '10.0.0');
+        assert($manifest->name === 'fixture_addon');
+        assert($manifest->type === 'addon');
+        assert($manifest->package === 'moddengine/example');
+        assert($manifest->asset === 'example-{version}.zip');
+        assert($manifest->phpMin === '8.1.0');
+        assert($manifest->whmcsMin === '8.13.0');
+        assert(str_ends_with((string) file_get_contents($manifest->manifestPath), "\n"));
+
+        $server = $base . '/modules/servers/fixture_server';
+        mkdir($server, 0777, true);
+        file_put_contents($server . '/fixture_server.php', "<?php\nfunction fixture_server_MetaData(): array { return ['DisplayName' => 'Fixture']; }\nfunction fixture_server_ConfigOptions(): array { return []; }\n");
+        assert(Manifest::generate($server)->type === 'server');
+
+        $registrar = $base . '/modules/registrars/fixture_registrar';
+        mkdir($registrar, 0777, true);
+        file_put_contents($registrar . '/fixture_registrar.php', "<?php\nfunction fixture_registrar_getConfigArray(): array { return []; }\n");
+        assert(Manifest::generate($registrar)->type === 'registrar');
+
+        putenv('GITHUB_REF_NAME=v1.2.4');
+        expectException(fn () => Manifest::generate($directory), 'versions disagree');
+    } finally {
+        foreach (['GITHUB_REPOSITORY' => $oldRepository, 'GITHUB_REF' => $oldRef, 'GITHUB_REF_NAME' => $oldRefName, 'GITHUB_REF_TYPE' => $oldRefType] as $key => $value) {
+            putenv($value === false ? $key : "{$key}={$value}");
+        }
+    }
 }
 
 function testArchiveSafety(string $base): void

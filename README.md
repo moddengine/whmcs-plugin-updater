@@ -51,6 +51,22 @@ Every independently installed component has a `whmcs.update-manifest.json` direc
 }
 ```
 
+Release pipelines can generate this file with the Composer development package. The component directory is the only required argument; the command loads `<name>.php`, calls the native WHMCS metadata function, and detects Composer, `whmcs.json`, and GitHub Actions metadata:
+
+```shell
+composer require --dev moddengine/whmcs-plugin-updater
+vendor/bin/whmcs-plugin-manifest modules/addons/example \
+  --whmcs-min 8.13.0 --whmcs-max-exclusive 10.0.0
+```
+
+Use `--package`, `--type`, `--version`, `--repository`, `--asset`, `--php-min`, `--whmcs-min`, or `--whmcs-max-exclusive` only when a value cannot be detected. Conflicting stable versions stop the build.
+
+PHP build scripts can call the same API directly:
+
+```php
+PluginUpdater\Manifest::generate(__DIR__ . '/modules/addons/example');
+```
+
 Supported destinations are calculated from `component.type` and `component.name`:
 
 | Type | Destination |

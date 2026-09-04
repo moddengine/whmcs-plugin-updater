@@ -1,0 +1,52 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use PluginUpdater\Manifest;
+
+$arguments = array_slice($argv, 1);
+if ($arguments === ['--help'] || $arguments === [] || str_starts_with($arguments[0], '-')) {
+    fwrite($arguments === ['--help'] ? STDOUT : STDERR, "Usage: whmcs-plugin-manifest DIRECTORY [--OPTION VALUE]\n");
+    exit($arguments === ['--help'] ? 0 : 2);
+}
+$directory = array_shift($arguments);
+$bundledCore = rtrim($directory, '/') . '/lib/Core.php';
+require_once is_file($bundledCore) ? $bundledCore : __DIR__ . '/../modules/addons/pluginupdater/lib/Core.php';
+$allowed = [
+    'package' => 'package',
+    'type' => 'type',
+    'version' => 'version',
+    'repository' => 'repository',
+    'asset' => 'asset',
+    'php-min' => 'phpMin',
+    'whmcs-min' => 'whmcsMin',
+    'whmcs-max-exclusive' => 'whmcsMaxExclusive',
+];
+$options = [];
+while ($arguments !== []) {
+    $argument = array_shift($arguments);
+    if (!str_starts_with($argument, '--')) {
+        fwrite(STDERR, "Unexpected argument {$argument}\n");
+        exit(2);
+    }
+    [$name, $inline] = array_pad(explode('=', substr($argument, 2), 2), 2, null);
+    if (!isset($allowed[$name]) || isset($options[$allowed[$name]])) {
+        fwrite(STDERR, "Unknown or duplicate option --{$name}\n");
+        exit(2);
+    }
+    $value = $inline ?? array_shift($arguments);
+    if ($value === null || $value === '' || str_starts_with($value, '--')) {
+        fwrite(STDERR, "Option --{$name} requires a value\n");
+        exit(2);
+    }
+    $options[$allowed[$name]] = $value;
+}
+
+try {
+    $manifest = Manifest::generate($directory, ...$options);
+    fwrite(STDOUT, $manifest->manifestPath . "\n");
+} catch (Throwable $error) {
+    fwrite(STDERR, $error->getMessage() . "\n");
+    exit(1);
+}

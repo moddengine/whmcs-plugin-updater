@@ -1,6 +1,7 @@
 parameters:
     level: 5
     paths:
+        - bin
         - modules
         - tests
     scanFiles:

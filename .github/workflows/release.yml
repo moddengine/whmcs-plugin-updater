@@ -46,10 +46,11 @@ jobs:
           cp -a modules/addons/pluginupdater build/modules/addons/
           cp LICENSE build/modules/addons/pluginupdater/LICENSE
           sed -Ei "s/'version' => '[0-9]+\.[0-9]+\.[0-9]+'/'version' => '$VERSION'/" build/modules/addons/pluginupdater/pluginupdater.php
-          jq --arg version "$VERSION" --arg repository "$GITHUB_REPOSITORY" --arg owner "$GITHUB_REPOSITORY_OWNER" \
-            '.package = ($owner + "/pluginupdater") | .version = $version | .github.repository = $repository' \
-            whmcs.update-manifest.json.example \
-            > build/modules/addons/pluginupdater/whmcs.update-manifest.json
+          bin/whmcs-plugin-manifest build/modules/addons/pluginupdater \
+            --package "$GITHUB_REPOSITORY_OWNER/pluginupdater" \
+            --php-min 8.3.0 \
+            --whmcs-min 8.13.0 \
+            --whmcs-max-exclusive 10.0.0
           (cd build && zip -qr "../$ASSET" modules)
           unzip -t "$ASSET"
           unzip -p "$ASSET" modules/addons/pluginupdater/whmcs.update-manifest.json | jq -e \

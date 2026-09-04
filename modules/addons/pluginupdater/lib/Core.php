@@ -47,6 +47,127 @@ final class Manifest
             throw new RuntimeException("Manifest {$path} must contain a JSON object");
         }
 
+        return self::fromData($data, $path);
+    }
+
+    public static function generate(
+        string $outputDirectory,
+        ?string $package = null,
+        ?string $type = null,
+        ?string $version = null,
+        ?string $repository = null,
+        ?string $asset = null,
+        ?string $phpMin = null,
+        ?string $whmcsMin = null,
+        ?string $whmcsMaxExclusive = null,
+    ): self {
+        $directory = realpath($outputDirectory);
+        if ($directory === false || !is_dir($directory)) {
+            throw new RuntimeException("Component directory {$outputDirectory} does not exist");
+        }
+        $name = basename($directory);
+        $modulePath = $directory . '/' . $name . '.php';
+        if (!is_file($modulePath)) {
+            throw new RuntimeException("Component entrypoint {$modulePath} does not exist");
+        }
+
+        if (!defined('WHMCS')) {
+            define('WHMCS', true);
+        }
+        require_once $modulePath;
+
+        $configFunction = $name . '_config';
+        $metadataFunction = $name . '_MetaData';
+        $optionsFunction = $name . '_ConfigOptions';
+        $registrarFunction = $name . '_getConfigArray';
+        $metadata = [];
+        $detectedType = null;
+        if (function_exists($configFunction)) {
+            $metadata = self::moduleMetadata($configFunction);
+            $detectedType = 'addon';
+        } elseif (function_exists($metadataFunction) || function_exists($optionsFunction)) {
+            $metadata = function_exists($metadataFunction) ? self::moduleMetadata($metadataFunction) : [];
+            if (function_exists($optionsFunction)) {
+                $metadata += self::moduleMetadata($optionsFunction);
+            }
+            $detectedType = 'server';
+        } elseif (function_exists($registrarFunction)) {
+            $metadata = self::moduleMetadata($registrarFunction);
+            $detectedType = 'registrar';
+        }
+
+        $normalized = str_replace('\\', '/', $directory);
+        if (preg_match('~/modules/(addons|servers|registrars)/[^/]+$~', $normalized, $match)) {
+            $pathType = ['addons' => 'addon', 'servers' => 'server', 'registrars' => 'registrar'][$match[1]];
+            if ($detectedType !== null && $detectedType !== $pathType) {
+                throw new RuntimeException("Component API does not match directory type {$pathType}");
+            }
+            $detectedType = $pathType;
+        }
+        $type ??= $detectedType;
+
+        $whmcs = self::nearbyJson($directory, 'whmcs.json');
+        $composer = self::nearbyJson($directory, 'composer.json', true);
+        $githubRepository = getenv('GITHUB_REPOSITORY') ?: null;
+        $repository ??= $githubRepository;
+        $package ??= $githubRepository ?? self::nestedString($composer, ['name']);
+
+        $versions = [];
+        foreach ([$version, self::nestedString($metadata, ['version']), self::nestedString($whmcs, ['version']), self::githubVersion()] as $candidate) {
+            if ($candidate !== null && ($stable = self::stableVersion($candidate)) !== null) {
+                $versions[$stable] = true;
+            }
+        }
+        if (count($versions) > 1) {
+            throw new RuntimeException('Discovered component versions disagree: ' . implode(', ', array_keys($versions)));
+        }
+        $version = array_key_first($versions);
+        if ($version === null) {
+            throw new RuntimeException('Unable to determine a stable component version');
+        }
+        if ($repository !== null) {
+            $asset ??= basename($repository) . '-{version}.zip';
+        }
+
+        $phpMin ??= self::versionMinimum(self::nestedString($whmcs, ['requirements', 'php', 'min']))
+            ?? self::versionMinimum(self::nestedString($composer, ['require', 'php']))
+            ?? self::versionMinimum(self::nestedString($composer, ['config', 'platform', 'php']));
+        $whmcsMin ??= self::versionMinimum(self::nestedString($whmcs, ['requirements', 'whmcs', 'min']));
+        $whmcsMaxExclusive ??= self::versionMinimum(self::nestedString($whmcs, ['requirements', 'whmcs', 'max_exclusive']));
+
+        $requires = array_filter([
+            'php_min' => $phpMin,
+            'whmcs_min' => $whmcsMin,
+            'whmcs_max_exclusive' => $whmcsMaxExclusive,
+        ], static fn (?string $value): bool => $value !== null);
+        $data = [
+            'schema' => 1,
+            'package' => $package,
+            'component' => ['type' => $type, 'name' => $name],
+            'version' => $version,
+            'github' => ['repository' => $repository, 'asset' => $asset],
+        ];
+        if ($requires !== []) {
+            $data['requires'] = $requires;
+        }
+
+        $path = $directory . '/' . self::FILENAME;
+        $manifest = self::fromData($data, $path);
+        try {
+            $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
+        } catch (JsonException $e) {
+            throw new RuntimeException("Unable to encode manifest: {$e->getMessage()}");
+        }
+        if (file_put_contents($path, $json) !== strlen($json)) {
+            throw new RuntimeException("Unable to write manifest {$path}");
+        }
+        return $manifest;
+    }
+
+    /** @param array<string,mixed> $data */
+    private static function fromData(array $data, string $path): self
+    {
+
         self::exactKeys($data, ['schema', 'package', 'component', 'version', 'github'], ['requires'], 'manifest');
         self::exactKeys(self::object($data, 'component'), ['type', 'name'], [], 'component');
         self::exactKeys(self::object($data, 'github'), ['repository', 'asset'], [], 'github');
@@ -103,6 +224,73 @@ final class Manifest
             $requires['whmcs_max_exclusive'] ?? null,
             $path,
         );
+    }
+
+    /** @return array<string,mixed> */
+    private static function moduleMetadata(string $function): array
+    {
+        $metadata = $function();
+        if (!is_array($metadata)) {
+            throw new RuntimeException("Module metadata function {$function} must return an array");
+        }
+        return $metadata;
+    }
+
+    /** @return array<string,mixed> */
+    private static function nearbyJson(string $directory, string $filename, bool $ancestors = false): array
+    {
+        do {
+            $path = $directory . '/' . $filename;
+            if (is_file($path)) {
+                try {
+                    $data = json_decode((string) file_get_contents($path), true, 32, JSON_THROW_ON_ERROR);
+                } catch (JsonException $e) {
+                    throw new RuntimeException("Invalid JSON in {$path}: {$e->getMessage()}");
+                }
+                return is_array($data) ? $data : [];
+            }
+            $parent = dirname($directory);
+            if (!$ancestors || $parent === $directory) {
+                break;
+            }
+            $directory = $parent;
+        } while (true);
+        return [];
+    }
+
+    /** @param array<string,mixed> $data @param list<string> $keys */
+    private static function nestedString(array $data, array $keys): ?string
+    {
+        $value = $data;
+        foreach ($keys as $key) {
+            if (!is_array($value) || !array_key_exists($key, $value)) {
+                return null;
+            }
+            $value = $value[$key];
+        }
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private static function githubVersion(): ?string
+    {
+        $ref = getenv('GITHUB_REF') ?: '';
+        if ((getenv('GITHUB_REF_TYPE') ?: '') !== 'tag' && !str_starts_with($ref, 'refs/tags/')) {
+            return null;
+        }
+        return getenv('GITHUB_REF_NAME') ?: basename($ref);
+    }
+
+    private static function stableVersion(string $version): ?string
+    {
+        return preg_match('/^v?(\d+\.\d+\.\d+)$/D', trim($version), $match) ? $match[1] : null;
+    }
+
+    private static function versionMinimum(?string $constraint): ?string
+    {
+        if ($constraint === null || !preg_match('/(?:^|\s)(?:>=|\^|~)?\s*(\d+\.\d+(?:\.\d+)?)/', $constraint, $match)) {
+            return null;
+        }
+        return substr_count($match[1], '.') === 1 ? $match[1] . '.0' : $match[1];
     }
 
     /** @return list<self> */

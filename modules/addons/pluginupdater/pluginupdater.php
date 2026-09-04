@@ -95,7 +95,7 @@ function pluginupdater_output(array $vars): void
             $action = is_string($_POST['action'] ?? null) ? $_POST['action'] : '';
             $package = is_string($_POST['package'] ?? null) ? $_POST['package'] : '';
             if ($action === 'check') {
-                $notices = $service->check();
+                $notices = $service->check(true);
                 logActivity('[Plugin Updater] Manual release check requested');
             } elseif ($action === 'preflight') {
                 $warnings = $service->preflight($package);

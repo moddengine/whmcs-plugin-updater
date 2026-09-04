@@ -488,7 +488,7 @@ class GitHubClient
             return ['status' => 304, 'etag' => $response['headers']['etag'] ?? $etag, 'releases' => [], 'headers' => $response['headers']];
         }
         if ($response['status'] !== 200) {
-            throw new HttpException($response['status'], 'GitHub release request failed', $response['headers']);
+            throw new HttpException($response['status'], $this->failureMessage($response), $response['headers']);
         }
         try {
             $decoded = json_decode($response['body'], true, 64, JSON_THROW_ON_ERROR);
@@ -499,6 +499,19 @@ class GitHubClient
             throw new RuntimeException('GitHub release response was not a list');
         }
         return ['status' => 200, 'etag' => $response['headers']['etag'] ?? null, 'releases' => $decoded, 'headers' => $response['headers']];
+    }
+
+    /** @param array{status:int,body:string,headers:array<string,string>} $response */
+    private function failureMessage(array $response): string
+    {
+        if ($response['status'] === 403 && ($response['headers']['x-ratelimit-remaining'] ?? null) === '0') {
+            return $this->token === null
+                ? 'GitHub API rate limit exceeded; configure a GitHub token in the addon settings'
+                : 'GitHub API rate limit exceeded; the configured token was not accepted or its quota is exhausted';
+        }
+        $decoded = json_decode($response['body'], true);
+        $detail = is_array($decoded) && is_string($decoded['message'] ?? null) ? trim($decoded['message']) : '';
+        return 'GitHub release request failed' . ($detail !== '' ? ': ' . $detail : '');
     }
 
     public function download(string $repository, Release $release, string $destination): void

@@ -213,6 +213,7 @@ function testBackoff(): void
     $secondDelay = strtotime($second->next_attempt_at . ' UTC') - strtotime($second->last_attempt_at . ' UTC');
     check($firstDelay === 3600 && $secondDelay === 7200, 'Daily-cron backoff is not strict exponential backoff');
     check(!Cache::mayAttempt($second, 'fixture'), 'Backoff allowed an early retry');
+    check(Cache::mayAttempt($second, 'fixture', true), 'Manual check did not bypass backoff');
     Capsule::table('mod_pluginupdater_repositories')->where('repository', $repository)->delete();
     fwrite(STDOUT, "PASS persisted exponential backoff\n");
 }

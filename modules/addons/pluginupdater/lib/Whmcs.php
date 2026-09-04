@@ -63,9 +63,9 @@ final class Cache
         ]);
     }
 
-    public static function mayAttempt(?object $row, string $fingerprint): bool
+    public static function mayAttempt(?object $row, string $fingerprint, bool $force = false): bool
     {
-        if ($row === null || !hash_equals((string) ($row->configuration_fingerprint ?? ''), $fingerprint)) {
+        if ($force || $row === null || !hash_equals((string) ($row->configuration_fingerprint ?? ''), $fingerprint)) {
             return true;
         }
         return strtotime((string) $row->next_attempt_at . ' UTC') <= time();
@@ -121,7 +121,7 @@ final class Service
     }
 
     /** @return list<string> */
-    public function check(): array
+    public function check(bool $force = false): array
     {
         $lockName = 'pluginupdater-' . substr(hash('sha256', $this->root), 0, 32);
         $lock = Capsule::selectOne('SELECT GET_LOCK(?, 0) AS acquired', [$lockName]);
@@ -139,7 +139,7 @@ final class Service
                 sort($configuration);
                 $fingerprint = hash('sha256', ($this->token ?? 'anonymous') . "\0" . implode("\0", array_unique($configuration)));
                 $row = Cache::row($repository);
-                if (!Cache::mayAttempt($row, $fingerprint)) {
+                if (!Cache::mayAttempt($row, $fingerprint, $force)) {
                     $messages[] = "{$repository}: backoff active until {$row->next_attempt_at} UTC";
                     continue;
                 }

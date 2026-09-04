@@ -22,6 +22,7 @@ mkdir($base, 0700, true);
 
 try {
     testManifestAndRelease($base);
+    testGitHubErrors();
     testManifestGeneration($base);
     testArchiveSafety($base);
     testTransactionAndRollback($base);
@@ -29,6 +30,24 @@ try {
     fwrite(STDOUT, "All plugin updater checks passed.\n");
 } finally {
     Fs::remove($base);
+}
+
+function testGitHubErrors(): void
+{
+    $method = new ReflectionMethod(GitHubClient::class, 'failureMessage');
+    $client = new GitHubClient('configured-token');
+    $message = $method->invoke($client, [
+        'status' => 403,
+        'body' => '{"message":"API rate limit exceeded"}',
+        'headers' => ['x-ratelimit-remaining' => '0'],
+    ]);
+    assert($message === 'GitHub API rate limit exceeded; the configured token was not accepted or its quota is exhausted');
+    $message = $method->invoke($client, [
+        'status' => 403,
+        'body' => '{"message":"Resource not accessible by personal access token"}',
+        'headers' => ['x-ratelimit-remaining' => '4999'],
+    ]);
+    assert($message === 'GitHub release request failed: Resource not accessible by personal access token');
 }
 
 function expectException(callable $callable, string $contains): void

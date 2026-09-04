@@ -71,7 +71,9 @@ try {
             if (!rename($old, $destination)) {
                 throw new RuntimeException("Unable to restore {$destination}");
             }
-        } elseif (!$swap['had_original'] && ($swap['swapped'] ?? false) && is_dir($destination)) {
+        } elseif (!$swap['had_original']
+            && !file_exists($deployment) && !is_link($deployment)
+            && is_dir($destination)) {
             pluginupdater_recovery_remove($destination);
         }
         if (is_dir($deployment)) {

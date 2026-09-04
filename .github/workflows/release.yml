@@ -1,0 +1,71 @@
+name: QA and release
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*.*.*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    name: Unit tests and QA
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: curl, json, posix, zip
+          coverage: none
+          tools: composer:v2
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - run: composer qa
+
+  release:
+    name: Build and release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: qa
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate tag
+        shell: bash
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          echo "ASSET=${GITHUB_REPOSITORY#*/}-${GITHUB_REF_NAME#v}.zip" >> "$GITHUB_ENV"
+      - name: Build installable ZIP
+        shell: bash
+        run: |
+          mkdir -p build/modules/addons
+          cp -a modules/addons/pluginupdater build/modules/addons/
+          cp LICENSE build/modules/addons/pluginupdater/LICENSE
+          sed -Ei "s/'version' => '[0-9]+\.[0-9]+\.[0-9]+'/'version' => '$VERSION'/" build/modules/addons/pluginupdater/pluginupdater.php
+          jq --arg version "$VERSION" --arg repository "$GITHUB_REPOSITORY" --arg owner "$GITHUB_REPOSITORY_OWNER" \
+            '.package = ($owner + "/pluginupdater") | .version = $version | .github.repository = $repository' \
+            whmcs.update-manifest.json.example \
+            > build/modules/addons/pluginupdater/whmcs.update-manifest.json
+          (cd build && zip -qr "../$ASSET" modules)
+          unzip -t "$ASSET"
+          unzip -p "$ASSET" modules/addons/pluginupdater/whmcs.update-manifest.json | jq -e \
+            --arg version "$VERSION" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg package "$GITHUB_REPOSITORY_OWNER/pluginupdater" \
+            --arg asset "$ASSET" \
+            '.schema == 1
+              and .package == $package
+              and .component == {"type":"addon","name":"pluginupdater"}
+              and .version == $version
+              and .github.repository == $repository
+              and ((.github.asset | gsub("\\{version\\}"; $version)) == $asset)' >/dev/null
+          unzip -p "$ASSET" modules/addons/pluginupdater/pluginupdater.php \
+            | grep -Fq "'version' => '$VERSION'"
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "$ASSET" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"

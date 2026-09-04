@@ -765,9 +765,10 @@ final class Fs
         if (!is_writable($storageReal)) {
             throw new RuntimeException('Update storage is not writable');
         }
-        if ((fileperms($storageReal) & 0007) !== 0) {
-            throw new RuntimeException('Update storage must not be accessible to other system users');
+        if ((fileperms($storageReal) & 0777) !== 0700) {
+            throw new RuntimeException('Update storage must have mode 0700');
         }
+        self::validateOwners([$storageReal]);
         return [$storageReal, $webReal, $whmcsReal];
     }
 
@@ -906,6 +907,7 @@ final class Transaction
             $incoming = $this->validateIncoming(Archive::manifests($extracted), $installed, $release);
             $installedKeys = array_fill_keys(array_map(static fn (Manifest $manifest): string => $manifest->componentKey(), $installed), true);
             $newComponents = array_values(array_filter($incoming, static fn (Manifest $manifest): bool => !isset($installedKeys[$manifest->componentKey()])));
+            $this->assertNewDestinationsAvailable($newComponents);
             if ($newComponents !== [] && !$componentsConfirmed) {
                 throw new RuntimeException('Release adds components that require explicit confirmation: ' . implode(', ', array_map(static fn (Manifest $manifest): string => $manifest->componentKey(), $newComponents)));
             }
@@ -960,6 +962,7 @@ final class Transaction
 
             // Recheck after all slower network and hashing work.
             $this->preflight($installed);
+            $this->assertNewDestinationsAvailable($newComponents);
             $maintenanceOriginal = (string) ($this->getMaintenance)();
             $journal['status'] = 'ready';
             $journal['maintenance_original'] = $maintenanceOriginal;
@@ -1215,7 +1218,9 @@ final class Transaction
         if ($current === 0 || $current >= 120) {
             return [];
         }
-        @set_time_limit(120);
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(120);
+        }
         $effective = (int) ini_get('max_execution_time');
         return $effective === 0 || $effective >= 120 ? [] : ["PHP max_execution_time is {$effective}s; the update may be terminated before completion"];
     }
@@ -1302,13 +1307,17 @@ final class Transaction
             if (!is_array($swap)) {
                 continue;
             }
-            if (($swap['swapped'] ?? false) && is_dir($swap['destination'])) {
-                Fs::remove($swap['destination']);
-            }
             if (is_dir($swap['old'] ?? '')) {
+                if (is_dir($swap['destination'])) {
+                    Fs::remove($swap['destination']);
+                }
                 if (!rename($swap['old'], $swap['destination'])) {
                     throw new RuntimeException("Unable to restore {$swap['component']}");
                 }
+            } elseif (!($swap['had_original'] ?? true)
+                && !file_exists($swap['deployment'] ?? '') && !is_link($swap['deployment'] ?? '')
+                && is_dir($swap['destination'] ?? '')) {
+                Fs::remove($swap['destination']);
             }
             if (is_dir($swap['deployment'] ?? '')) {
                 Fs::remove($swap['deployment']);
@@ -1321,6 +1330,17 @@ final class Transaction
         foreach (new DirectoryIterator($root) as $entry) {
             if (!$entry->isDot() && $entry->getFilename() !== $keep) {
                 Fs::remove($entry->getPathname());
+            }
+        }
+    }
+
+    /** @param list<Manifest> $manifests */
+    private function assertNewDestinationsAvailable(array $manifests): void
+    {
+        foreach ($manifests as $manifest) {
+            $destination = $manifest->destination($this->whmcsRoot);
+            if (file_exists($destination) || is_link($destination)) {
+                throw new RuntimeException("New component destination already exists: {$destination}");
             }
         }
     }
@@ -1407,7 +1427,9 @@ final class Recovery
                 if (!rename($swap['old'], $swap['destination'])) {
                     throw new RuntimeException("Unable to recover {$swap['destination']}");
                 }
-            } elseif (!$swap['had_original'] && ($swap['swapped'] ?? false) && is_dir($swap['destination'])) {
+            } elseif (!$swap['had_original']
+                && !file_exists($swap['deployment']) && !is_link($swap['deployment'])
+                && is_dir($swap['destination'])) {
                 Fs::remove($swap['destination']);
             }
             if (is_dir($swap['deployment'])) {

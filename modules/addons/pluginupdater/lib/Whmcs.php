@@ -285,15 +285,29 @@ final class Service
             Fs::mkdir($storage . '/' . $directory, 0700);
         }
         $recovery = $storage . '/recover.php';
-        if (!file_exists($recovery)) {
-            $source = dirname(__DIR__) . '/bin/recover.php';
-            if (!copy($source, $recovery)) {
-                throw new RuntimeException('Unable to install the external recovery utility');
+        $source = dirname(__DIR__) . '/bin/recover.php';
+        $temporary = $recovery . '.tmp-' . bin2hex(random_bytes(6));
+        $input = fopen($source, 'rb');
+        $output = fopen($temporary, 'xb');
+        if ($input === false || $output === false) {
+            if (is_resource($input)) {
+                fclose($input);
             }
-            if (!chmod($recovery, 0700)) {
-                @unlink($recovery);
-                throw new RuntimeException('Unable to secure the external recovery utility');
+            if (is_resource($output)) {
+                fclose($output);
             }
+            @unlink($temporary);
+            throw new RuntimeException('Unable to copy the external recovery utility');
+        }
+        $copied = stream_copy_to_stream($input, $output);
+        $persisted = $copied !== false && fflush($output) && (!function_exists('fsync') || fsync($output));
+        fclose($input);
+        fclose($output);
+        if (!$persisted || !chmod($temporary, 0700)
+            || hash_file('sha256', $source) !== hash_file('sha256', $temporary)
+            || !rename($temporary, $recovery)) {
+            @unlink($temporary);
+            throw new RuntimeException('Unable to install the external recovery utility');
         }
     }
 }

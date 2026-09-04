@@ -4,18 +4,21 @@ This plan covers end-to-end testing of normal plugin updates, grouped multi-comp
 
 ## Status and prerequisites
 
-The integration test is intentionally deferred until the required licensed test environment is available. Unit tests remain available with:
+The reusable WHMCS 8.13.7 and 9.0.8 harness is implemented. Run the licensed CLI suite and recorded browser flow with:
 
 ```shell
-php -d zend.assertions=1 -d assert.exception=1 tests/run.php
+integration/run.sh
+integration/record-update.sh
 ```
 
-Before starting, provide:
+See [`integration/README.md`](../integration/README.md) for local inputs and [`integration-test-results.md`](integration-test-results.md) for implemented coverage and remaining cases.
 
-- A WHMCS development/test licence valid for the test hostname, public egress IP, and installation path.
-- Local WHMCS release archives for each supported version under test (initially WHMCS 8.13 and 9.0).
-- A dedicated GitHub fixture repository whose Releases may be created and deleted during testing.
-- If the fixture repository is private, a fine-grained GitHub token with the minimum permissions required to read releases and assets. Release publishing credentials belong in the test runner, not WHMCS.
+The local harness requires:
+
+- A WHMCS development/test licence valid for the test hostname, public egress IP, installation path, and fixed test-container address.
+- A local WHMCS release archive for each supported version under test.
+
+The deterministic browser suite uses a local HTTPS GitHub mock. Testing public GitHub redirects, authentication, and rate-limit responses additionally requires a dedicated fixture repository and, if private, a fine-grained read-only token. Release publishing credentials belong in the test runner, not WHMCS.
 
 Do not paste a licence or token into chat, commit it, bake it into a container image, or place it under the web root. Supply secrets at runtime using mode-`0600` files or container secrets. Keep WHMCS archives and secrets in ignored local storage outside the repository, and destroy the environment and its secrets when testing is complete.
 

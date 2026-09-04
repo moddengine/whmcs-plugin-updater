@@ -19,7 +19,7 @@ function pluginupdater_config(): array
         'description' => 'Securely stage, update, and roll back manifest-enabled WHMCS plugins.',
         'author' => 'WHMCS Plugin Updater',
         'language' => 'english',
-        'version' => '1.0.0',
+        'version' => '0.0.1',
         'fields' => [
             'storagePath' => [
                 'FriendlyName' => 'Update Storage Path',

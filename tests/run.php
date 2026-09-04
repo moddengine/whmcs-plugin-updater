@@ -136,6 +136,10 @@ function testTransactionAndRollback(string $base): void
     }
     chmod($storage, 0700);
     expectException(fn () => Fs::validateStorage($web, $web, $whmcs), 'outside the web');
+    chmod($storage, 0770);
+    expectException(fn () => Fs::validateStorage($storage, $web, $whmcs), 'mode 0700');
+    chmod($storage, 0700);
+    Fs::validateStorage($storage, $web, $whmcs);
     writeJson($whmcs . '/modules/addons/example/' . Manifest::FILENAME, manifestData('addon', 'example'));
     writeJson($whmcs . '/modules/servers/example/' . Manifest::FILENAME, manifestData('server', 'example'));
     file_put_contents($whmcs . '/modules/addons/example/old.php', 'old-addon');
@@ -168,6 +172,11 @@ function testTransactionAndRollback(string $base): void
     $installed = Manifest::discover($whmcs);
     expectException(fn () => $transaction->apply($installed, $release, $github, true, true, true, false), 'adds components');
     assert(!file_exists($whmcs . '/modules/registrars/example'));
+    mkdir($whmcs . '/modules/registrars/example', 0700);
+    file_put_contents($whmcs . '/modules/registrars/example/unmanaged.php', 'unmanaged');
+    expectException(fn () => $transaction->apply($installed, $release, $github, true, true, true, true), 'destination already exists');
+    assert(file_get_contents($whmcs . '/modules/registrars/example/unmanaged.php') === 'unmanaged');
+    Fs::remove($whmcs . '/modules/registrars/example');
     $transaction->apply($installed, $release, $github, true, true, true, true);
     assert(file_get_contents($whmcs . '/modules/addons/example/new.php') === 'new-addon');
     assert(!file_exists($whmcs . '/modules/addons/example/old.php'));
@@ -235,4 +244,39 @@ function testRecovery(string $base): void
     assert(Recovery::pending($storage, static function (string $value): void {}, static function (string $message): void {}) === 0);
     assert(!file_exists($committedOld));
     assert(file_get_contents($destination . '/old.php') === 'old');
+
+    $newDestination = $parent . '/newcomponent';
+    mkdir($newDestination, 0700);
+    file_put_contents($newDestination . '/new.php', 'new');
+    $newSwap = [
+        'destination' => $newDestination,
+        'old' => $parent . '/.pluginupdater-old-gap-newcomponent',
+        'deployment' => $parent . '/.pluginupdater-new-gap-newcomponent',
+        'had_original' => false,
+        'swapped' => false,
+        'remove_only' => false,
+    ];
+    writeJson($storage . '/transactions/gap.json', [
+        'schema' => 1,
+        'id' => 'gap',
+        'whmcs_root' => $root,
+        'status' => 'swapping',
+        'swaps' => [$newSwap],
+    ]);
+    Recovery::pending($storage, static function (string $value): void {}, static function (string $message): void {});
+    assert(!file_exists($newDestination));
+
+    mkdir($newDestination, 0700);
+    file_put_contents($newDestination . '/new.php', 'new');
+    writeJson($storage . '/transactions/standalone.json', [
+        'schema' => 1,
+        'id' => 'standalone',
+        'whmcs_root' => $root,
+        'status' => 'swapping',
+        'swaps' => [$newSwap],
+    ]);
+    copy(__DIR__ . '/../modules/addons/pluginupdater/bin/recover.php', $storage . '/recover.php');
+    $process = proc_open([PHP_BINARY, $storage . '/recover.php', '--latest'], [STDIN, STDOUT, STDERR], $pipes);
+    assert(is_resource($process) && proc_close($process) === 0);
+    assert(!file_exists($newDestination));
 }

@@ -22,7 +22,7 @@ A dependency-free WHMCS addon for checking, staging, updating, and rolling back 
 4. Configure the absolute update storage path and, optionally, a fine-grained GitHub token with read-only Contents access.
 5. Grant addon access only to administrator roles allowed to install executable PHP code.
 
-Before publishing this updater itself, copy `whmcs.update-manifest.json.example` to `whmcs.update-manifest.json` and replace the GitHub organization/repository placeholders. This enables the same self-update transaction used for other packages.
+Tagged releases build an installable `whmcs-plugin-updater-<version>.zip` containing the `modules/addons/pluginupdater` tree and a stamped self-update manifest. Push a stable tag such as `v1.2.3`; the GitHub Actions workflow runs QA before publishing the ZIP to a GitHub release.
 
 The storage directory contains downloads, validated extraction trees, the one retained pre-upgrade copy, transaction journals, and a standalone recovery command. It must never be web-accessible.
 
@@ -105,3 +105,7 @@ nix-shell --run 'composer install && composer qa'
 This runs the stubbed unit checks and PHPStan with PHP 8.3. Composer dependencies are development-only; the shipped addon remains dependency-free.
 
 Licensed end-to-end coverage, including normal update, rollback, crash recovery, and self-update, is specified in [the integration test plan](docs/integration-test-plan.md).
+
+With local WHMCS 8.13.7 and 9.0.8 distributions and a development licence, run the reusable two-version Docker harness with `integration/run.sh`. See the [harness instructions](integration/README.md) and [latest integration results](docs/integration-test-results.md).
+
+Run `integration/record-update.sh` to generate Playwright videos of the complete WHMCS admin update and rollback flow on both versions against the deterministic HTTPS GitHub mock.

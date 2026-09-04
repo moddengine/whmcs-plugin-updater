@@ -1,0 +1,55 @@
+name: whmcs-plugin-updater-integration
+
+services:
+  db:
+    image: mariadb:10.6
+    environment:
+      MARIADB_DATABASE: whmcs
+      MARIADB_USER: whmcs
+      MARIADB_PASSWORD: integration-only
+      MARIADB_ROOT_PASSWORD: integration-root-only
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    volumes:
+      - database:/var/lib/mysql
+    networks:
+      default:
+        ipv4_address: 172.24.0.2
+
+  web:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WHMCS_DB_HOST: db
+      WHMCS_DB_NAME: whmcs
+      WHMCS_DB_USER: whmcs
+      WHMCS_DB_PASSWORD: integration-only
+      WHMCS_TEST_URL: http://localhost:${WHMCS_PORT:-18080}
+      WHMCS_EXPECTED_VERSION: ${WHMCS_EXPECTED_VERSION:-8.13.7}
+    ports:
+      - "127.0.0.1:${WHMCS_PORT:-18080}:80"
+    volumes:
+      - whmcs:/var/www/html
+      - updater-storage:/var/lib/whmcs-plugin-updater
+      - ../whmcs-dist/${WHMCS_ZIP:-whmcs_v8137_full.zip}:/dist/whmcs.zip:ro
+      - ../whmcs-dist/licence.key:/dist/licence.key:ro
+      - ..:/source:ro
+    networks:
+      default:
+        ipv4_address: 172.24.0.3
+
+volumes:
+  database:
+  whmcs:
+  updater-storage:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.24.0.0/24

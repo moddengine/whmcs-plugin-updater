@@ -5,7 +5,7 @@
     "type": "addon",
     "name": "pluginupdater"
   },
-  "version": "1.0.0",
+  "version": "0.0.1",
   "github": {
     "repository": "your-org/whmcs-plugin-updater",
     "asset": "whmcs-plugin-updater-{version}.zip"

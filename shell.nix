@@ -6,5 +6,13 @@ let
   };
 in
 pkgs.mkShell {
-  packages = [ php pkgs.php83Packages.composer ];
+  packages = with pkgs; [
+    actionlint
+    gh
+    jq
+    php
+    php83Packages.composer
+    unzip
+    zip
+  ];
 }

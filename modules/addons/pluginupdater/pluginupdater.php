@@ -31,7 +31,7 @@ function pluginupdater_config(): array
                 'FriendlyName' => 'GitHub Token',
                 'Type' => 'password',
                 'Size' => '50',
-                'Description' => 'Optional fine-grained token with read-only Contents access.',
+                'Description' => 'Optional fine-grained token with read-only Contents access. <a href="https://github.com/settings/personal-access-tokens/new?name=WHMCS%20Plugin%20Updater&amp;description=Read-only%20access%20to%20plugin%20release%20metadata%20and%20assets&amp;contents=read" target="_blank" rel="noopener noreferrer">Create a token on GitHub</a>, then limit it to the plugin repositories you want to update.',
             ],
             'maintenanceMode' => [
                 'FriendlyName' => 'Maintenance Mode During Updates',

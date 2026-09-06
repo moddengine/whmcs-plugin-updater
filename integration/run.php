@@ -261,6 +261,7 @@ function testSingleUpdateAndRollback(): void
     pluginupdater_output(['storagePath' => STORAGE, 'maintenanceMode' => 'on', 'modulelink' => 'addonmodules.php?module=pluginupdater']);
     $html = (string) ob_get_clean();
     check(str_contains($html, '&lt;b&gt;Fixture release notes&lt;/b&gt;'), 'Release notes were absent or not HTML-escaped');
+    check(str_contains($html, '<summary>What does the pre-flight check do?</summary>'), 'Pre-flight details panel was absent');
     check(str_contains($html, 'I have created and verified a current WHMCS database backup.'), 'Update form omitted the database-backup confirmation');
 
     transaction()->apply(installedPackage($package), $release, new LocalReleaseClient($zip), true, true, true, true);
@@ -268,6 +269,7 @@ function testSingleUpdateAndRollback(): void
     check(!file_exists(ROOTDIR . '/modules/addons/not-installed.txt'), 'File above manifest root escaped into WHMCS');
     check(localAPI('GetConfigurationValue', ['setting' => 'MaintenanceMode'])['value'] === '', 'Maintenance Mode was not restored');
     check(count(glob(STORAGE . '/backups/' . hash('sha256', $package) . '/*') ?: []) === 1, 'Expected one rollback copy');
+    check($service->rollbackVersion($package) === '1.0.0', 'Rollback version was not read from the retained backup');
 
     transaction()->rollback(installedPackage($package), true, true, true);
     check(is_file($root . '/old.php') && !file_exists($root . '/new.php'), 'Single rollback did not restore the baseline tree');

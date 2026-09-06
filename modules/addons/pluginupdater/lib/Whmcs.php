@@ -223,13 +223,25 @@ final class Service
         return $this->transaction()->preflight($packages[$package]);
     }
 
-    public function backupAvailable(string $package): bool
+    public function rollbackVersion(string $package): ?string
     {
         if ($this->storage === '') {
-            return false;
+            return null;
         }
         $root = $this->storage . '/backups/' . hash('sha256', $package);
-        return is_dir($root) && count(array_diff(scandir($root) ?: [], ['.', '..'])) > 0;
+        $backups = is_dir($root) ? array_values(array_filter(scandir($root) ?: [], static fn (string $name): bool => $name !== '.' && $name !== '..' && is_dir($root . '/' . $name))) : [];
+        rsort($backups, SORT_STRING);
+        $metadata = $backups === [] ? null : json_decode((string) @file_get_contents($root . '/' . $backups[0] . '/metadata.json'), true);
+        if (!is_array($metadata) || ($metadata['package'] ?? null) !== $package || !is_array($metadata['components'] ?? null)) {
+            return null;
+        }
+        $versions = [];
+        foreach ($metadata['components'] as $component) {
+            if (is_array($component) && !($component['absent'] ?? false) && is_string($component['version'] ?? null)) {
+                $versions[] = $component['version'];
+            }
+        }
+        return $versions === [] ? null : implode(', ', array_unique($versions));
     }
 
     public function recoverPending(): int

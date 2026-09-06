@@ -163,16 +163,23 @@ function pluginupdater_output(array $vars): void
             echo '<div class="pu-warning">' . pluginupdater_escape($item['selection_error']) . '</div>';
         }
         echo '</td><td class="pu-actions">';
-        echo pluginupdater_action_form($moduleLink, $token, 'preflight', $package, 'Run pre-flight', false, false);
+        echo pluginupdater_action_form($moduleLink, $token, 'preflight', $package, 'Run pre-flight checks', false, false);
         if ($release) {
             echo pluginupdater_action_form($moduleLink, $token, 'update', $package, 'Update to ' . $release->version, true, $timeoutWarnings !== []);
         }
-        if ($service->backupAvailable($package)) {
-            echo pluginupdater_action_form($moduleLink, $token, 'rollback', $package, 'Roll back', true, $timeoutWarnings !== []);
+        if (($rollbackVersion = $service->rollbackVersion($package)) !== null) {
+            echo pluginupdater_action_form($moduleLink, $token, 'rollback', $package, 'Roll back to ' . $rollbackVersion, true, $timeoutWarnings !== []);
         }
         echo '</td></tr>';
     }
     echo '</tbody></table>';
+    echo '<details><summary>What does the pre-flight check do?</summary><ul>'
+        . '<li>Checks that update storage is outside the web and WHMCS roots and has secure permissions.</li>'
+        . '<li>Checks that installed plugin directories exist, are readable, and contain no unsafe files.</li>'
+        . '<li>Checks storage and plugin directory ownership.</li>'
+        . '<li>Tests creating, writing, renaming, and removing temporary files.</li>'
+        . '<li>Checks the PHP execution-time limit.</li>'
+        . '</ul><p>It does not download a release, modify installed plugins, change the database, or enable maintenance mode.</p></details>';
 }
 
 function pluginupdater_escape(string $value): string
